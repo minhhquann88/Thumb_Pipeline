@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Thumb Pipeline</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+
+      <!-- ── Topbar ──────────────────────────────────────────────────────── -->
+      <header class="topbar">
+        <div class="brand">
+          <img src="./logo.png" class="brand-logo" alt="Logo" />
+          <span class="brand-name">Thumb Pipeline</span>
+        </div>
+        <div class="status-row">
+          <span class="badge" id="backend-badge">
+            <span class="dot"></span>
+            <span id="backend-label">Backend</span>
+          </span>
+        </div>
+      </header>
+
+      <!-- ── Sidebar: account tabs ────────────────────────────────────────── -->
+      <div class="shell">
+        <nav class="sidebar">
+          <div class="acct-tabs" id="acct-tabbar">
+            <!-- tabs rendered by tabs.js -->
+          </div>
+          <button class="btn btn-ghost btn-sm add-acct-btn" id="add-account-btn" title="Thêm tài khoản">＋ Thêm</button>
+        </nav>
+
+        <!-- ── Empty state ───────────────────────────────────────────────── -->
+        <div class="empty-state" id="empty-state">
+          <p>Chưa có tài khoản nào.</p>
+          <button class="btn btn-primary" id="add-account-empty-btn">＋ Thêm tài khoản</button>
+        </div>
+
+        <!-- ── Main workspace ────────────────────────────────────────────── -->
+        <div class="workspace" id="workspace" style="display:none">
+
+          <!-- LEFT pane -->
+          <aside class="pane pane-left" id="pane-left">
+
+            <!-- Account card -->
+            <section class="card">
+              <div class="acct-card-header">
+                <span class="acct-avatar-lg" id="acct-avatar">?</span>
+                <div class="acct-card-info">
+                  <span class="acct-name" id="acct-name">—</span>
+                  <span class="acct-email" id="acct-email">—</span>
+                </div>
+              </div>
+              <div class="btn-row">
+                <button id="acct-login-btn"  class="btn btn-primary btn-sm">Đăng nhập</button>
+                <button id="acct-logout-btn" class="btn btn-ghost btn-sm btn-danger">Đăng xuất</button>
+                <button id="acct-delete-btn" class="btn btn-ghost btn-sm btn-danger" title="Xóa tài khoản">🗑</button>
+              </div>
+            </section>
+
+            <!-- Pipeline form -->
+            <section class="card">
+              <h2 class="section-title">Cài đặt Pipeline</h2>
+              <form id="job-form">
+
+                <div class="field">
+                  <label for="f-sid">Google Sheet ID <span class="required">*</span></label>
+                  <div class="input-row">
+                    <input id="f-sid" type="text" autocomplete="off" placeholder="17Wc4Uzv6WVZ310w..." />
+                    <button type="button" class="btn btn-ghost btn-sm btn-icon" id="open-sheet-btn" title="Mở trang tính">🔗</button>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label for="f-sname">Sheet name</label>
+                  <input id="f-sname" type="text" value="Sheet1" autocomplete="off" />
+                </div>
+
+                <div class="sheet-status" id="sheet-status" style="display:none"></div>
+
+                <div class="dup-warning" id="dup-warning" style="display:none">
+                  ⚠ Sheet này đang được xử lý ở tab khác.
+                </div>
+
+                <div class="field">
+                  <label for="f-folder">Thư mục Drive</label>
+                  <input id="f-folder" type="text" value="thumbnails" autocomplete="off" />
+                </div>
+
+                <div class="field-row">
+                  <div class="field">
+                    <label for="f-vcol">Cột video URL <span class="hint">(0-based)</span></label>
+                    <input id="f-vcol" type="number" value="3" min="0" />
+                  </div>
+                  <div class="field">
+                    <label for="f-tcol">Cột thumbnail <span class="hint">(0-based)</span></label>
+                    <input id="f-tcol" type="number" value="14" min="0" />
+                  </div>
+                </div>
+
+                <details class="advanced">
+                  <summary>Cài đặt nâng cao</summary>
+                  <div class="field" style="margin-top:10px">
+                    <label for="f-ts">Timestamps chụp ảnh <span class="hint">(giây, cách dấu phẩy)</span></label>
+                    <input id="f-ts" type="text" value="3,8,13,18,23" autocomplete="off" />
+                  </div>
+                </details>
+
+                <div class="btn-row btn-run-row">
+                  <button type="button" class="btn btn-primary btn-run" id="run-btn">
+                    &#9654;&nbsp; Chạy
+                  </button>
+                  <button type="button" class="btn btn-ghost btn-danger btn-run" id="stop-btn" disabled>
+                    &#9632;&nbsp; Dừng
+                  </button>
+                </div>
+
+              </form>
+            </section>
+          </aside>
+
+          <!-- Drag handle -->
+          <div class="resizer" id="resizer" title="Kéo để co giãn"></div>
+
+          <!-- RIGHT pane: log output -->
+          <section class="pane pane-right">
+            <div class="log-header">
+              <h2 class="section-title" id="log-title">Kết quả</h2>
+              <div class="log-header-right">
+                <span class="status-pill" id="status-pill"></span>
+                <div class="output-actions">
+                  <button class="btn btn-sm btn-accent" id="scroll-bottom-btn" style="display:none">↓ Mới nhất</button>
+                  <button class="btn btn-ghost btn-sm" id="clear-btn">Xóa</button>
+                </div>
+              </div>
+            </div>
+            <div class="output-wrap" id="output-wrap">
+              <pre id="output">Chưa có dữ liệu.</pre>
+            </div>
+          </section>
+
+        </div><!-- /workspace -->
+      </div><!-- /shell -->
+    </div><!-- /app -->
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
