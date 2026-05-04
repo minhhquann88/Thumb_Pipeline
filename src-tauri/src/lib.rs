@@ -2,8 +2,10 @@ use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
+use std::time::Duration;
 
-use tauri::{Manager, State};
+use tauri::path::BaseDirectory;
+use tauri::{AppHandle, Manager, State};
 
 struct BackendProcess(Mutex<Option<Child>>);
 
@@ -53,6 +55,23 @@ fn python_backend_command(project_root: PathBuf) -> BackendCommand {
         .map(String::from)
         .collect(),
         current_dir: Some(project_root),
+    }
+}
+
+/// Đường dẫn bundle theo Tauri (NSIS/MSI/cả target/release sau build).
+fn tauri_resource_backend(app: &AppHandle) -> Option<BackendCommand> {
+    let path = app
+        .path()
+        .resolve("backend_server.exe", BaseDirectory::Resource)
+        .ok()?;
+    if path.is_file() {
+        Some(BackendCommand {
+            program: path,
+            args: Vec::new(),
+            current_dir: None,
+        })
+    } else {
+        None
     }
 }
 
@@ -122,7 +141,11 @@ fn resources_backend_command(exe_dir: &Path) -> Option<BackendCommand> {
     }
 }
 
-fn resolve_backend_command(current_exe: &Path, debug_mode: bool) -> Result<BackendCommand, String> {
+fn resolve_backend_command(
+    current_exe: &Path,
+    debug_mode: bool,
+    app: Option<&AppHandle>,
+) -> Result<BackendCommand, String> {
     let exe_dir = current_exe
         .parent()
         .ok_or("Khong tim duoc thu muc chua exe")?;
@@ -133,6 +156,18 @@ fn resolve_backend_command(current_exe: &Path, debug_mode: bool) -> Result<Backe
         }
     }
 
+    if let Some(app) = app {
+        if let Some(command) = tauri_resource_backend(app) {
+            return Ok(command);
+        }
+    }
+
+    // resources/ (bundle Tauri) TRUOC _internal/ — tranh backend cu trong _internal (build_release.bat)
+    // trong khi ban moi nam trong resources -> thieu route /profiles -> HTTP 404.
+    if let Some(command) = resources_backend_command(exe_dir) {
+        return Ok(command);
+    }
+
     if let Some(command) = bundled_backend_command(exe_dir) {
         return Ok(command);
     }
@@ -141,12 +176,12 @@ fn resolve_backend_command(current_exe: &Path, debug_mode: bool) -> Result<Backe
         return Ok(command);
     }
 
-    if let Some(command) = resources_backend_command(exe_dir) {
-        return Ok(command);
-    }
-
-    if let Some(command) = dist_backend_command(exe_dir) {
-        return Ok(command);
+    // Chi dev: dist/ tren cay thu muc. Release KHONG dung — tranh nham dist\ o folder giong ban build
+    // (vi du Desktop\release\dist\) khi chay exe / sau cai NSIS.
+    if debug_mode {
+        if let Some(command) = dist_backend_command(exe_dir) {
+            return Ok(command);
+        }
     }
 
     Err(format!(
@@ -154,10 +189,14 @@ fn resolve_backend_command(current_exe: &Path, debug_mode: bool) -> Result<Backe
     ))
 }
 
-fn backend_command() -> Result<BackendCommand, String> {
+fn backend_command(app: &AppHandle) -> Result<BackendCommand, String> {
     let current_exe =
         std::env::current_exe().map_err(|e| format!("Khong lay duoc duong dan exe: {e}"))?;
-    resolve_backend_command(&current_exe, cfg!(debug_assertions))
+    resolve_backend_command(
+        &current_exe,
+        cfg!(debug_assertions),
+        Some(app),
+    )
 }
 
 fn spawn_backend(backend_command: BackendCommand) -> Result<Child, String> {
@@ -184,17 +223,27 @@ fn spawn_backend(backend_command: BackendCommand) -> Result<Child, String> {
         command.current_dir(current_dir);
     }
 
-    command.spawn().map_err(|e| {
+    let mut child = command.spawn().map_err(|e| {
         format!(
             "Khong khoi dong duoc backend: {} {} ({e})",
             backend_command.program.display(),
             backend_command.args.join(" ")
         )
-    })
+    })?;
+
+    std::thread::sleep(Duration::from_millis(400));
+    if let Ok(Some(status)) = child.try_wait() {
+        return Err(format!(
+            "Backend thoat ngay (ma {}). Xem backend.log canh file exe.",
+            status.code().map(|c| c.to_string()).unwrap_or_else(|| "?".into())
+        ));
+    }
+
+    Ok(child)
 }
 
 #[tauri::command]
-fn restart_backend(state: State<BackendProcess>) -> Result<String, String> {
+fn restart_backend(app: AppHandle, state: State<BackendProcess>) -> Result<String, String> {
     // Kill process cũ
     let mut guard = state.0.lock().map_err(|_| "lock poisoned".to_string())?;
     if let Some(mut child) = guard.take() {
@@ -203,7 +252,7 @@ fn restart_backend(state: State<BackendProcess>) -> Result<String, String> {
     }
 
     // Respawn
-    let cmd = backend_command()?;
+    let cmd = backend_command(&app)?;
     let child = spawn_backend(cmd)?;
     *guard = Some(child);
     Ok("Backend restarted".to_string())
@@ -216,7 +265,7 @@ pub fn run() {
         .manage(BackendProcess(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![restart_backend])
         .setup(|app| {
-            let backend_command = backend_command()?;
+            let backend_command = backend_command(app.handle())?;
             let backend = spawn_backend(backend_command)?;
             let state = app.state::<BackendProcess>();
             *state.0.lock().expect("backend process lock poisoned") = Some(backend);
@@ -275,7 +324,8 @@ mod tests {
             .join("debug")
             .join("thumb_pipeline_desktop.exe");
 
-        let command = resolve_backend_command(&current_exe, true).expect("resolve debug backend");
+        let command =
+            resolve_backend_command(&current_exe, true, None).expect("resolve debug backend");
 
         assert_eq!(command.current_dir.as_deref(), Some(root.as_path()));
         assert_eq!(command.program, PathBuf::from("python"));
@@ -298,18 +348,17 @@ mod tests {
     }
 
     #[test]
-    fn release_backend_command_uses_flat_dist_backend_exe() {
+    fn release_backend_command_uses_resources_next_to_exe() {
         let root = temp_project_root();
-        fs::create_dir_all(root.join("dist")).expect("create dist dir");
-        let backend_exe = root.join("dist").join("backend_server.exe");
+        let release_dir = root.join("src-tauri").join("target").join("release");
+        fs::create_dir_all(release_dir.join("resources")).expect("create resources dir");
+        let backend_exe = release_dir.join("resources").join("backend_server.exe");
         fs::write(&backend_exe, "backend").expect("write backend exe");
-        let current_exe = root
-            .join("src-tauri")
-            .join("target")
-            .join("release")
-            .join("thumb_pipeline_desktop.exe");
+        let current_exe = release_dir.join("thumb_pipeline_desktop.exe");
+        fs::write(&current_exe, "").expect("write fake app exe");
 
-        let command = resolve_backend_command(&current_exe, false).expect("resolve release backend");
+        let command =
+            resolve_backend_command(&current_exe, false, None).expect("resolve release backend");
 
         assert_eq!(command.program, backend_exe);
         assert_eq!(command.current_dir, None);

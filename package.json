@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
+    "build:backend": ".venv\\Scripts\\python.exe -m PyInstaller backend_server.spec --noconfirm",
     "build": "tauri build",
     "tauri": "tauri",
     "test": "npm run test:backend && npm run test:frontend",

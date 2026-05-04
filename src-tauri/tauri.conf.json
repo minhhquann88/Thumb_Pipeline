@@ -5,7 +5,7 @@
   "identifier": "com.thumbpipeline.desktop",
   "build": {
     "beforeDevCommand": "",
-    "beforeBuildCommand": "",
+    "beforeBuildCommand": "cd .. && .venv\\Scripts\\python.exe -m PyInstaller backend_server.spec --noconfirm",
     "frontendDist": "../frontend"
   },
   "app": {
