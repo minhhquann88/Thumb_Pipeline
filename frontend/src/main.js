@@ -9,12 +9,10 @@
 
 // ── Side-effect modules (tự đăng ký event listeners khi import) ──────────────
 import "./resizer.js";
-import "./open-sheet.js";
 import "./profiles.js";
 import "./account.js";
 import "./jobs.js";
 import "./log.js";
-import "./dedup.js";
 
 // ── Logic modules ─────────────────────────────────────────────────────────────
 import { callApi }             from "./api.js";
@@ -36,16 +34,19 @@ setRenderAccountCardFn(renderAccountCard);
 setUpdateRunBtnRef(updateRunBtn);
 setPollingUpdateRunBtn(updateRunBtn);
 
-// ── Backend health check ───────────────────────────────────────────────────────
+const reloadBeBtn = document.querySelector("#reload-be-btn");
+
 async function checkBackend() {
   try {
     const data = await callApi("/health");
     const ok = data.status === "ok";
     backendBadge.className   = "badge " + (ok ? "online" : "error");
     backendLabel.textContent = ok ? "Backend ✓" : "Backend ✗";
+    if (reloadBeBtn) reloadBeBtn.style.display = ok ? "none" : "";
   } catch {
     backendBadge.className   = "badge error";
     backendLabel.textContent = "Backend ✗";
+    if (reloadBeBtn) reloadBeBtn.style.display = "";
   }
 }
 
@@ -59,3 +60,36 @@ async function checkBackend() {
   }
   startPolling();
 })();
+
+// ── Reload Backend button ────────────────────────────────────────────────────
+if (reloadBeBtn) {
+  reloadBeBtn.style.display = "none"; // ẩn mặc định, chỉ hiện khi BE lỗi
+  reloadBeBtn.addEventListener("click", async () => {
+    reloadBeBtn.disabled = true;
+    reloadBeBtn.textContent = "Đang kết nối...";
+    backendBadge.className   = "badge";
+    backendLabel.textContent = "Đang kết nối...";
+    try {
+      if (window.__TAURI__) {
+        await window.__TAURI__.core.invoke("restart_backend");
+      }
+    } catch (e) {
+      console.warn("restart_backend invoke error:", e);
+    }
+    // Poll health tối đa 10s
+    let retries = 0;
+    const poll = async () => {
+      retries++;
+      await checkBackend();
+      const isOk = backendBadge.className.includes("online");
+      if (!isOk && retries < 20) {
+        setTimeout(poll, 500);
+      } else {
+        reloadBeBtn.disabled = false;
+        reloadBeBtn.textContent = "ReLoad";
+        if (isOk) await loadProfiles();
+      }
+    };
+    setTimeout(poll, 1000);
+  });
+}

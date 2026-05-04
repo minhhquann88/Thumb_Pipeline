@@ -1,34 +1,35 @@
-"""backend/pipeline/credentials.py — Load credentials cho pipeline."""
+"""backend/pipeline/credentials.py — Load credentials cho pipeline (1 tai khoan)."""
 from __future__ import annotations
 
-from backend.auth import require_credentials
 from backend.pipeline.config import LogFn, PipelineConfig
 
 
-def load_credentials_list(config: PipelineConfig, log: LogFn):
-    """Tra ve danh sach credentials de dung cho pipeline.
+def load_single_credentials(config: PipelineConfig, log: LogFn):
+    """Tra ve credentials duy nhat cho pipeline.
 
-    - Neu config.profile_ids rong: dung 1 credentials mac dinh.
-    - Neu co profile_ids: load tung profile, bo qua profile chua login.
+    - Neu config.profile_ids co phan tu -> dung profile dau tien.
+    - Neu rong -> dung tai khoan mac dinh (auth/token.json).
     """
     from backend.profiles import load_profile_credentials
+    from backend.auth import require_credentials
 
-    if not config.profile_ids:
-        creds = require_credentials()
-        log("[*] Dung tai khoan mac dinh")
-        return [creds]
-
-    creds_list = []
-    for pid in config.profile_ids:
-        c = load_profile_credentials(pid)
-        if c:
-            creds_list.append(c)
-            log(f"[*] Profile '{pid}' san sang")
-        else:
-            log(f"[!] Profile '{pid}' chua dang nhap, bo qua")
-
-    if not creds_list:
+    if config.profile_id:
+        pid = config.profile_id
+        creds = load_profile_credentials(pid)
+        if creds:
+            log(f"[*] Dung profile: {pid[:12]}...")
+            return creds
         raise RuntimeError(
-            "Khong co profile nao hop le. Hay dang nhap it nhat 1 tai khoan."
+            f"Profile '{pid}' chua dang nhap hoac token het han. "
+            "Vui long dang nhap lai trong app."
         )
-    return creds_list
+
+    # Fallback: tai khoan mac dinh (legacy token.json)
+    creds = require_credentials()
+    log("[*] Dung tai khoan mac dinh")
+    return creds
+
+
+# Giu tuong thich nguoc cho code cu con goi load_credentials_list
+def load_credentials_list(config: PipelineConfig, log: LogFn):
+    return [load_single_credentials(config, log)]

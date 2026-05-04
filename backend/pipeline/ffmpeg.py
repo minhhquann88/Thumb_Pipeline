@@ -17,8 +17,8 @@ def _find_tool(name: str) -> str:
     """
     exe = name + (".exe" if sys.platform == "win32" else "")
 
-    if hasattr(sys, "_MEIPASS"):
-        candidate = Path(sys._MEIPASS) / exe  # type: ignore[attr-defined]
+    if getattr(sys, "frozen", False):
+        candidate = Path(sys.executable).parent / exe
     else:
         candidate = Path(__file__).parent.parent.parent / "tools" / exe
 
@@ -32,10 +32,29 @@ def _find_tool(name: str) -> str:
     )
 
 
+# Cache tai module load — chi resolve path 1 lan duy nhat
+_FFMPEG_PATH:  str | None = None
+_FFPROBE_PATH: str | None = None
+
+
+def _get_ffmpeg() -> str:
+    global _FFMPEG_PATH
+    if _FFMPEG_PATH is None:
+        _FFMPEG_PATH = _find_tool("ffmpeg")
+    return _FFMPEG_PATH
+
+
+def _get_ffprobe() -> str:
+    global _FFPROBE_PATH
+    if _FFPROBE_PATH is None:
+        _FFPROBE_PATH = _find_tool("ffprobe")
+    return _FFPROBE_PATH
+
+
 def extract_thumbnails(config: PipelineConfig, video: Path, out_dir: Path, base: str) -> list[Path]:
     """Extract thumbnail images from a video at configured timestamps."""
-    ffmpeg  = _find_tool("ffmpeg")
-    ffprobe = _find_tool("ffprobe")
+    ffmpeg  = _get_ffmpeg()
+    ffprobe = _get_ffprobe()
 
     probe = subprocess.run(
         [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "json", str(video)],

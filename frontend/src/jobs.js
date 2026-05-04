@@ -1,104 +1,186 @@
 // frontend/src/jobs.js — Run/Stop buttons, updateRunBtn, isCurrentSheetRunning
-
 import { callApi } from "./api.js";
-import { runBtn, stopBtn, fSid, fSname, sheetStatus, dupWarning, output } from "./dom.js";
+
+import { runBtn, stopBtn, fSid, fSname,
+         sidStatus, snameStatus, output,
+         checkSidBtn, checkSnameBtn, sidLinkWrap, sidLinkInput } from "./dom.js";
 import * as state from "./state.js";
 import { getJobStatus, saveFormToState } from "./tabs.js";
-import { checkDuplicate, scheduleDupCheck } from "./dedup.js";
 import { printLog, renderJobStatus } from "./log.js";
 import { startPolling } from "./polling.js";
 
-const ACTIVE_JOB_STATUSES = ["queued", "running", "cancelling"];
+const ACTIVE_JOB_STATUSES   = ["queued", "running", "cancelling"];
 const STOPPABLE_JOB_STATUSES = ["queued", "running"];
 
 // Ngăn form tự submit (reload trang)
 document.querySelector("#job-form")?.addEventListener("submit", e => e.preventDefault());
 
-export function isCurrentSheetRunning() {
+// Trang thai kiem tra rieng cho tung field
+// "idle" | "checking" | "ok" | "error"
+let sidCheckState   = { status: "idle", sheetNames: [] };
+let snameCheckState = { status: "idle" };
+
+function resetSidStatus() {
+  sidCheckState = { status: "idle", sheetNames: [] };
+  snameCheckState = { status: "idle" };
+  _setStatus(sidStatus, "idle", "");
+  _setStatus(snameStatus, "idle", "");
+  const clearThumbStatus = document.querySelector("#clear-thumb-status");
+  if (clearThumbStatus) clearThumbStatus.style.display = "none";
+  if (sidLinkWrap) sidLinkWrap.style.display = "none";
+  updateRunBtn();
+}
+
+function resetSnameStatus() {
+  snameCheckState = { status: "idle" };
+  _setStatus(snameStatus, "idle", "");
+  const clearThumbStatus = document.querySelector("#clear-thumb-status");
+  if (clearThumbStatus) clearThumbStatus.style.display = "none";
+  updateRunBtn();
+}
+
+function _setStatus(el, type, msg) {
+  if (!el) return;
+  if (!msg) { el.style.display = "none"; return; }
+  el.style.display = "block";
+  el.className = "field-status" + (type === "ok" ? " ok" : type === "error" ? " error" : type === "checking" ? " checking" : "");
+  el.textContent = msg;
+}
+
+// ─── Check Spreadsheet ID ─────────────────────────────────────────────────
+
+async function checkSpreadsheetId() {
+  const sid = fSid.value.trim();
+  const pid = state.activeTab;
+  if (!sid) { _setStatus(sidStatus, "error", "Vui lòng nhập Spreadsheet ID"); return; }
+  if (!pid)  { _setStatus(sidStatus, "error", "Chưa chọn tài khoản"); return; }
+
+  sidCheckState = { status: "checking", sheetNames: [] };
+  _setStatus(sidStatus, "checking", "Đang kiểm tra Spreadsheet ID...");
+  checkSidBtn.disabled = true;
+  updateRunBtn();
+
+  try {
+    const r = await callApi(
+      `/utils/check-spreadsheet?spreadsheet_id=${encodeURIComponent(sid)}&profile_id=${encodeURIComponent(pid)}`,
+      { timeoutMs: 20000, retries: 1 },
+    );
+    if (r.ok) {
+      sidCheckState = { status: "ok", sheetNames: r.sheet_names || [] };
+      _setStatus(sidStatus, "ok", `✓ ${r.message}`);
+      
+      const fullUrl = `https://docs.google.com/spreadsheets/d/${sid}/edit`;
+      if (sidLinkWrap && sidLinkInput) {
+        sidLinkInput.value = fullUrl;
+        sidLinkWrap.style.display = "block";
+      }
+      
+    } else {
+      sidCheckState = { status: "error", sheetNames: [] };
+      _setStatus(sidStatus, "error", `✗ ${r.message}`);
+    }
+  } catch (e) {
+    sidCheckState = { status: "error", sheetNames: [] };
+    _setStatus(sidStatus, "error", "✗ Không kết nối được hoặc Spreadsheet ID sai");
+  } finally {
+    checkSidBtn.disabled = false;
+  }
+  updateRunBtn();
+}
+
+// ─── Check Sheet Name ──────────────────────────────────────────────────────
+
+async function checkSheetName() {
   const sid   = fSid.value.trim();
   const sname = fSname.value.trim() || "Sheet1";
-  if (!sid) return false;
-  const currentJobId = state.activeTab ? state.tabStates[state.activeTab]?.jobId : null;
-  return Object.values(state.jobsCache).some(j =>
-    j.spreadsheet_id === sid &&
-    j.sheet_name     === sname &&
-    ACTIVE_JOB_STATUSES.includes(j.status) &&
-    j.id !== currentJobId
-  );
+  const pid   = state.activeTab;
+  if (sidCheckState.status !== "ok") { _setStatus(snameStatus, "error", "Kiểm tra Spreadsheet ID trước"); return; }
+  if (!pid)  { _setStatus(snameStatus, "error", "Chưa chọn tài khoản"); return; }
+
+  snameCheckState = { status: "checking" };
+  _setStatus(snameStatus, "checking", "Đang kiểm tra Sheet name...");
+  checkSnameBtn.disabled = true;
+  const clearThumbStatus = document.querySelector("#clear-thumb-status");
+  if (clearThumbStatus) clearThumbStatus.style.display = "none";
+  updateRunBtn();
+
+  try {
+    const r = await callApi(
+      `/utils/check-sheet?spreadsheet_id=${encodeURIComponent(sid)}&sheet_name=${encodeURIComponent(sname)}&profile_id=${encodeURIComponent(pid)}`,
+      { timeoutMs: 20000, retries: 1 },
+    );
+    if (r.ok) {
+      snameCheckState = { status: "ok" };
+      _setStatus(snameStatus, "ok", `✓ ${r.message}`);
+    } else if (r.running) {
+      snameCheckState = { status: "error" };
+      _setStatus(snameStatus, "error", `⚠ ${r.message}`);
+    } else {
+      snameCheckState = { status: "error" };
+      _setStatus(snameStatus, "error", `✗ ${r.message}`);
+    }
+  } catch (e) {
+    snameCheckState = { status: "error" };
+    _setStatus(snameStatus, "error", "✗ Không kết nối được hoặc Sheet không tồn tại");
+  } finally {
+    checkSnameBtn.disabled = false;
+  }
+  updateRunBtn();
+}
+
+checkSidBtn?.addEventListener("click", checkSpreadsheetId);
+checkSnameBtn?.addEventListener("click", checkSheetName);
+
+// Reset status khi user thay doi gia tri
+fSid.addEventListener("input", () => { resetSidStatus(); updateRunBtn(); });
+fSname.addEventListener("input", () => { resetSnameStatus(); updateRunBtn(); });
+
+// Export de tabs.js goi khi switch tab (reset status)
+export function resetCheckStatuses() {
+  sidCheckState   = { status: "idle", sheetNames: [] };
+  snameCheckState = { status: "idle" };
+  _setStatus(sidStatus,   "idle", "");
+  _setStatus(snameStatus, "idle", "");
+  const clearThumbStatus = document.querySelector("#clear-thumb-status");
+  if (clearThumbStatus) clearThumbStatus.style.display = "none";
+  if (sidLinkWrap) sidLinkWrap.style.display = "none";
 }
 
 export function updateRunBtn() {
   if (!state.activeTab) {
     runBtn.disabled = true;
     stopBtn.disabled = true;
+    if (clearThumbBtn) { clearThumbBtn.disabled = true; clearThumbBtn.title = "Chưa chọn tài khoản"; }
     return;
   }
-  const p            = state.profiles.find(x => x.id === state.activeTab);
-  const st           = state.tabStates[state.activeTab] || {};
-  const hasSid       = !!fSid.value.trim();
-  const sheetReady   = state.sheetValidation.status !== "invalid";
-  const jobStatus    = getJobStatus(st.jobId);
-  const isRunning    = ACTIVE_JOB_STATUSES.includes(jobStatus);
-  const isStoppable  = STOPPABLE_JOB_STATUSES.includes(jobStatus);
-  const sheetConflict = !isRunning && isCurrentSheetRunning();
-  runBtn.disabled  = !p?.logged_in || !hasSid || !sheetReady || isRunning || sheetConflict;
+  const p             = state.profiles.find(x => x.id === state.activeTab);
+  const st            = state.tabStates[state.activeTab] || {};
+  const hasSid        = !!fSid.value.trim();
+  
+  // BẮT BUỘC phải kiểm tra và trả về "ok" thì mới được phép chạy
+  const sidReady      = sidCheckState.status === "ok";
+  const snameReady    = snameCheckState.status === "ok";
+  
+  const jobStatus     = getJobStatus(st.jobId);
+  const isRunning     = ACTIVE_JOB_STATUSES.includes(jobStatus);
+  const isStoppable   = STOPPABLE_JOB_STATUSES.includes(jobStatus);
+  
+  runBtn.disabled  = !p?.logged_in || !hasSid || !sidReady || !snameReady || isRunning;
   stopBtn.disabled = !isStoppable;
-  if (sheetConflict) {
-    runBtn.title = "Sheet này đang được xử lý ở tab khác";
-    dupWarning.style.display = "block";
-  } else if (!isRunning) {
-    runBtn.title = "";
+  
+  if (!isRunning) {
+    runBtn.title = (sidReady && snameReady) ? "" : "Vui lòng bấm 'Kiểm tra' cả Sheet ID và Sheet Name";
+  }
+
+  // Chỉ cho phép xóa thumbnail khi cả SID và Sheet Name đều đã kiểm tra OK
+  if (clearThumbBtn) {
+    const canClear = sidReady && snameReady && !!p?.logged_in;
+    clearThumbBtn.disabled = !canClear;
+    clearThumbBtn.title = canClear
+      ? "Xóa toàn bộ dữ liệu cột thumbnail (trừ tiêu đề)"
+      : "Cần kiểm tra Spreadsheet ID và Sheet Name trước";
   }
 }
-
-fSid.addEventListener("input",   () => { scheduleDupCheck(); updateRunBtn(); });
-fSname.addEventListener("input", () => { scheduleDupCheck(); updateRunBtn(); });
-
-let sheetCheckTimer = null;
-
-async function validateSheet() {
-  const spreadsheetId = fSid.value.trim();
-  const sheetName = fSname.value.trim() || "Sheet1";
-  const profileId = state.activeTab;
-  if (!spreadsheetId || !profileId) {
-    state.setSheetValidation({ status: "idle", message: "" });
-    sheetStatus.style.display = "none";
-    updateRunBtn();
-    return;
-  }
-  state.setSheetValidation({ status: "checking", message: "Dang kiem tra Sheet ID va Sheet name..." });
-  sheetStatus.textContent = "Dang kiem tra Sheet ID va Sheet name...";
-  sheetStatus.className = "sheet-status";
-  sheetStatus.style.display = "block";
-  try {
-    const result = await callApi(`/utils/sheet-validate?spreadsheet_id=${encodeURIComponent(spreadsheetId)}&sheet_name=${encodeURIComponent(sheetName)}&profile_id=${encodeURIComponent(profileId)}`, { timeoutMs: 20000, retries: 1 });
-    if (result.ok) {
-      state.setSheetValidation({ status: "valid", message: result.message });
-      sheetStatus.textContent = `✓ Sheet ID va Sheet name hop le`;
-      sheetStatus.className = "sheet-status ok";
-      sheetStatus.style.display = "block";
-    } else {
-      state.setSheetValidation({ status: "invalid", message: result.message });
-      sheetStatus.textContent = `✗ ${result.message}`;
-      sheetStatus.className = "sheet-status error";
-      sheetStatus.style.display = "block";
-    }
-  } catch (e) {
-    state.setSheetValidation({ status: "invalid", message: "Khong tim thay Google Sheet ID" });
-    sheetStatus.textContent = "✗ Khong tim thay Google Sheet ID";
-    sheetStatus.className = "sheet-status error";
-    sheetStatus.style.display = "block";
-  }
-  updateRunBtn();
-}
-
-function scheduleSheetValidation() {
-  clearTimeout(sheetCheckTimer);
-  sheetCheckTimer = setTimeout(validateSheet, 600);
-}
-
-fSid.addEventListener("input", scheduleSheetValidation);
-fSname.addEventListener("input", scheduleSheetValidation);
 
 runBtn.addEventListener("click", async () => {
   const runProfileId = state.activeTab;
@@ -112,10 +194,7 @@ runBtn.addEventListener("click", async () => {
     state.tabStates[runProfileId].jobId = null;
     if (state.activeTab === runProfileId) printLog("Dang khoi dong job moi...");
   }
-  await checkDuplicate(runProfileId);
-  if (dupWarning.style.display === "block") {
-    if (!confirm("Trang tính này đang được xử lý ở nơi khác. Vẫn tiếp tục?")) return;
-  }
+  
   runBtn.disabled = true;
   runBtn.textContent = "Đang khởi động...";
   try {
@@ -129,7 +208,7 @@ runBtn.addEventListener("click", async () => {
         drive_folder: st.driveFolder, video_url_col: st.videoUrlCol,
         thumb_col: st.thumbCol, target_timestamps: timestamps,
         max_workers: 3, upload_workers: 3,
-        thumb_quality: 2, thumb_width: 1280, profile_ids: [runProfileId],
+        thumb_quality: 2, thumb_width: 1280, profile_id: runProfileId,
       }),
     });
     state.tabStates[runProfileId].jobId = snap.id;
@@ -183,5 +262,58 @@ stopBtn.addEventListener("click", async () => {
       output.textContent += "\nLỗi dừng: " + e.message;
       stopBtn.disabled = false;
     }
+  }
+});
+
+// ─── Clear Thumbnail Column ──────────────────────────────────────────────────
+
+const clearThumbBtn    = document.querySelector("#clear-thumb-btn");
+const clearThumbStatus = document.querySelector("#clear-thumb-status");
+
+function _setClearStatus(type, msg) {
+  if (!clearThumbStatus) return;
+  if (!msg) { clearThumbStatus.style.display = "none"; return; }
+  clearThumbStatus.style.display = "inline";
+  clearThumbStatus.className = "field-status" +
+    (type === "ok" ? " ok" : type === "error" ? " error" : type === "checking" ? " checking" : "");
+  clearThumbStatus.textContent = msg;
+}
+
+clearThumbBtn?.addEventListener("click", async () => {
+  const pid   = state.activeTab;
+  const sid   = fSid.value.trim();
+  const sname = fSname.value.trim() || "Sheet1";
+  const tcol  = parseInt(document.querySelector("#f-tcol")?.value ?? "14", 10);
+
+  if (!pid)  { _setClearStatus("error", "Chưa chọn tài khoản"); return; }
+  if (!sid)  { _setClearStatus("error", "Chưa nhập Spreadsheet ID"); return; }
+  if (sidCheckState.status !== "ok")   { _setClearStatus("error", "Cần kiểm tra Spreadsheet ID trước"); return; }
+  if (snameCheckState.status !== "ok") { _setClearStatus("error", "Cần kiểm tra Sheet Name trước"); return; }
+
+  if (!confirm(`Xóa toàn bộ dữ liệu cột Thumbnail (cột ${tcol}) trong sheet "${sname}"?\nDòng tiêu đề sẽ được giữ lại.`)) return;
+
+  clearThumbBtn.disabled = true;
+  _setClearStatus("checking", "Đang xóa...");
+
+  try {
+    const r = await callApi("/utils/clear-thumb-col", {
+      method: "POST",
+      timeoutMs: 30000,
+      body: JSON.stringify({
+        spreadsheet_id: sid,
+        sheet_name: sname,
+        thumb_col: tcol,
+        profile_id: pid,
+      }),
+    });
+    if (r.ok) {
+      _setClearStatus("ok", `✓ ${r.message}`);
+    } else {
+      _setClearStatus("error", `✗ ${r.message || "Xóa thất bại"}`);
+    }
+  } catch (e) {
+    _setClearStatus("error", "✗ " + e.message);
+  } finally {
+    clearThumbBtn.disabled = false;
   }
 });

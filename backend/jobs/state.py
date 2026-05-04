@@ -8,11 +8,12 @@ from backend.models import JobSnapshot, JobStatus
 
 
 class JobState:
-    def __init__(self, job_id: str, spreadsheet_id: str = "", sheet_name: str = "") -> None:
+    def __init__(self, job_id: str, spreadsheet_id: str = "", sheet_name: str = "", profile_id: str = "") -> None:
         now = datetime.now(timezone.utc).isoformat()
         self.id             = job_id
         self.spreadsheet_id = spreadsheet_id
         self.sheet_name     = sheet_name
+        self.profile_id     = profile_id
         self.status: JobStatus = "queued"
         self.created_at     = now
         self.updated_at     = now
@@ -51,7 +52,7 @@ class JobState:
                 self.error = error
             self.updated_at = datetime.now(timezone.utc).isoformat()
 
-    def snapshot(self) -> JobSnapshot:
+    def snapshot(self, include_logs: bool = True) -> JobSnapshot:
         with self._lock:
             return JobSnapshot(
                 id=self.id,
@@ -60,7 +61,7 @@ class JobState:
                 sheet_name=self.sheet_name,
                 created_at=self.created_at,
                 updated_at=self.updated_at,
-                logs=list(self.logs),
+                logs=list(self.logs) if include_logs else [],
                 result=self.result,
                 error=self.error,
             )

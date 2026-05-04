@@ -20,16 +20,19 @@
             <span class="dot"></span>
             <span id="backend-label">Backend</span>
           </span>
+          <button class="btn btn-ghost btn-sm" id="reload-be-btn" title="Khởi động lại Backend" style="margin-left:8px; font-size:12px; display:none;">ReLoad</button>
         </div>
       </header>
 
       <!-- ── Sidebar: account tabs ────────────────────────────────────────── -->
       <div class="shell">
         <nav class="sidebar">
-          <div class="acct-tabs" id="acct-tabbar">
-            <!-- tabs rendered by tabs.js -->
+          <div class="acct-tabs">
+            <div id="acct-tabbar" style="display: contents;">
+              <!-- tabs rendered by tabs.js -->
+            </div>
+            <button class="btn btn-ghost btn-sm add-acct-btn" id="add-account-btn" title="Thêm tài khoản">＋ Thêm</button>
           </div>
-          <button class="btn btn-ghost btn-sm add-acct-btn" id="add-account-btn" title="Thêm tài khoản">＋ Thêm</button>
         </nav>
 
         <!-- ── Empty state ───────────────────────────────────────────────── -->
@@ -56,7 +59,7 @@
               <div class="btn-row">
                 <button id="acct-login-btn"  class="btn btn-primary btn-sm">Đăng nhập</button>
                 <button id="acct-logout-btn" class="btn btn-ghost btn-sm btn-danger">Đăng xuất</button>
-                <button id="acct-delete-btn" class="btn btn-ghost btn-sm btn-danger" title="Xóa tài khoản">🗑</button>
+                <button id="acct-delete-btn" class="btn btn-ghost btn-sm btn-danger" title="Xóa tài khoản">Xóa tài khoản</button>
               </div>
             </section>
 
@@ -69,19 +72,21 @@
                   <label for="f-sid">Google Sheet ID <span class="required">*</span></label>
                   <div class="input-row">
                     <input id="f-sid" type="text" autocomplete="off" placeholder="17Wc4Uzv6WVZ310w..." />
-                    <button type="button" class="btn btn-ghost btn-sm btn-icon" id="open-sheet-btn" title="Mở trang tính">🔗</button>
+                    <button type="button" class="btn btn-ghost btn-sm" id="check-sid-btn" title="Kiem tra Spreadsheet ID">Kiem tra</button>
+                  </div>
+                  <div class="field-status" id="sid-status" style="display:none"></div>
+                  <div id="sid-link-wrap" style="display:none; margin-top:8px;">
+                    <input type="text" id="sid-link-input" readonly style="width:100%; font-size:11px; font-family:monospace; padding:6px; border:1px solid var(--border); border-radius:4px; background:var(--bg); color:var(--text); cursor:text" title="Click de copy" onclick="this.select(); document.execCommand('copy');" />
                   </div>
                 </div>
 
                 <div class="field">
                   <label for="f-sname">Sheet name</label>
-                  <input id="f-sname" type="text" value="Sheet1" autocomplete="off" />
-                </div>
-
-                <div class="sheet-status" id="sheet-status" style="display:none"></div>
-
-                <div class="dup-warning" id="dup-warning" style="display:none">
-                  ⚠ Sheet này đang được xử lý ở tab khác.
+                  <div class="input-row">
+                    <input id="f-sname" type="text" value="Sheet1" autocomplete="off" />
+                    <button type="button" class="btn btn-ghost btn-sm" id="check-sname-btn" title="Kiem tra Sheet name">Kiem tra</button>
+                  </div>
+                  <div class="field-status" id="sname-status" style="display:none"></div>
                 </div>
 
                 <div class="field">
@@ -108,6 +113,11 @@
                   </div>
                 </details>
 
+                <div class="btn-row" style="margin-bottom:6px;">
+                  <button type="button" class="btn btn-ghost btn-sm btn-danger" id="clear-thumb-btn" title="Xóa toàn bộ dữ liệu cột thumbnail (trừ tiêu đề)">🗑 Xóa cột Thumbnail</button>
+                  <span class="field-status" id="clear-thumb-status" style="display:none; margin-left:8px;"></span>
+                </div>
+
                 <div class="btn-row btn-run-row">
                   <button type="button" class="btn btn-primary btn-run" id="run-btn">
                     &#9654;&nbsp; Chạy
@@ -132,7 +142,6 @@
                 <span class="status-pill" id="status-pill"></span>
                 <div class="output-actions">
                   <button class="btn btn-sm btn-accent" id="scroll-bottom-btn" style="display:none">↓ Mới nhất</button>
-                  <button class="btn btn-ghost btn-sm" id="clear-btn">Xóa</button>
                 </div>
               </div>
             </div>

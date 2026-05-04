@@ -11,7 +11,6 @@ echo.
 :: Check project root
 if not exist "backend\main.py" (
     echo [ERROR] Run this script from the project root ^(Colab/^)
-    pause
     exit /b 1
 )
 
@@ -21,12 +20,10 @@ if not exist "tools\ffmpeg.exe" (
     echo [ERROR] tools\ffmpeg.exe not found.
     echo Download: https://www.gyan.dev/ffmpeg/builds/
     echo Get ffmpeg-release-essentials.zip, extract ffmpeg.exe + ffprobe.exe into tools\
-    pause
     exit /b 1
 )
 if not exist "tools\ffprobe.exe" (
     echo [ERROR] tools\ffprobe.exe not found. See above.
-    pause
     exit /b 1
 )
 echo       OK - ffmpeg + ffprobe found
@@ -36,7 +33,6 @@ echo.
 echo [1/5] Activating Python virtual environment...
 if not exist ".venv\Scripts\activate.bat" (
     echo [ERROR] .venv not found. Run: python -m venv .venv
-    pause
     exit /b 1
 )
 call .venv\Scripts\activate.bat
@@ -44,10 +40,9 @@ call .venv\Scripts\activate.bat
 :: Step 2: Install PyInstaller
 echo.
 echo [2/5] Installing PyInstaller...
-pip install pyinstaller --quiet
+pip install pyinstaller --default-timeout=1000
 if errorlevel 1 (
     echo [ERROR] pip install pyinstaller failed
-    pause
     exit /b 1
 )
 
@@ -59,7 +54,6 @@ if exist "dist\backend_server" rmdir /s /q "dist\backend_server"
 pyinstaller backend_server.spec --noconfirm
 if errorlevel 1 (
     echo [ERROR] PyInstaller failed
-    pause
     exit /b 1
 )
 echo       OK - dist\backend_server\backend_server.exe
@@ -71,7 +65,6 @@ echo       (First Rust compile may take 5-10 minutes)
 npm run build
 if errorlevel 1 (
     echo [ERROR] Tauri build failed
-    pause
     exit /b 1
 )
 
@@ -82,12 +75,18 @@ set TAURI_RELEASE=src-tauri\target\release
 set DEST=%TAURI_RELEASE%\_internal
 
 if exist "%DEST%" rmdir /s /q "%DEST%"
-xcopy /e /i /q "dist\backend_server" "%DEST%"
+mkdir "%DEST%"
+copy /y "dist\backend_server.exe" "%DEST%\" >nul
 if errorlevel 1 (
     echo [ERROR] Copy backend failed
-    pause
     exit /b 1
 )
+
+:: Copy required binaries and secrets
+echo Copying ffmpeg and secrets into %DEST%...
+copy /y "tools\ffmpeg.exe" "%DEST%\" >nul
+copy /y "tools\ffprobe.exe" "%DEST%\" >nul
+copy /y "client_secrets.json" "%DEST%\" >nul
 
 echo.
 echo ================================================
@@ -104,4 +103,3 @@ echo     ffprobe.exe
 echo.
 echo Users only need to copy the entire %TAURI_RELEASE%\ folder and run the exe.
 echo.
-pause

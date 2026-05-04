@@ -1,6 +1,6 @@
 // frontend/src/log.js — Log display, auto-scroll, printLog
 
-import { outputWrap, output, scrollBottomBtn, clearBtn, logTitle, statusPill } from "./dom.js";
+import { outputWrap, output, scrollBottomBtn, logTitle, statusPill } from "./dom.js";
 import { activeTab, tabStates, jobsCache } from "./state.js";
 
 let userScrolledUp = false;
@@ -60,7 +60,7 @@ export function renderJobStatus() {
   const atBottom = isAtBottom();
   const logText  = (snap.logs && snap.logs.length)
     ? snap.logs.join("\n")
-    : (snap.status === "queued" ? "Đang chờ khởi động..." : "Chưa có log.");
+    : (snap.status === "queued" ? "Đang chờ khởi động..." : "Đang load log...");
   const footer = snap.error
     ? `\n\n❌ Lỗi: ${snap.error}`
     : (snap.result ? `\n\n📊 Kết quả:\n${JSON.stringify(snap.result, null, 2)}` : "");
@@ -78,7 +78,4 @@ scrollBottomBtn.addEventListener("click", () => {
   userScrolledUp = false;
   outputWrap.scrollTop = outputWrap.scrollHeight;
   scrollBottomBtn.style.display = "none";
-});
-clearBtn.addEventListener("click", () => {
-  output.textContent = "Chưa có dữ liệu.";
 });

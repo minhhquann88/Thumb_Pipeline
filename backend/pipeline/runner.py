@@ -10,7 +10,6 @@ from pathlib import Path
 
 from backend.auth import build_service
 from backend.pipeline.config import LogFn, PipelineConfig, PipelineResult
-from backend.pipeline.credentials import load_credentials_list
 from backend.pipeline.drive import (
     download_video,
     extract_drive_file_id,
@@ -19,23 +18,6 @@ from backend.pipeline.drive import (
 )
 from backend.pipeline.ffmpeg import extract_thumbnails
 from backend.pipeline.sheets import read_sheet, write_thumb_links
-
-
-_ACCOUNT_LIMITS: dict[str, dict[str, threading.Semaphore]] = {}
-_ACCOUNT_LIMITS_LOCK = threading.Lock()
-
-def _account_limits(key: str) -> dict[str, threading.Semaphore]:
-    with _ACCOUNT_LIMITS_LOCK:
-        limits = _ACCOUNT_LIMITS.get(key)
-        if not limits:
-            limits = {
-                "row": threading.Semaphore(3),
-                "download": threading.Semaphore(3),
-                "ffmpeg": threading.Semaphore(3),
-                "upload": threading.Semaphore(3),
-            }
-            _ACCOUNT_LIMITS[key] = limits
-        return limits
 
 
 # --- Worker ------------------------------------------------------------------
@@ -51,118 +33,93 @@ def _process_row(
     row       = task["row"]
     folder_id = task["folder_id"]
     tmp_dir   = Path(task["tmp_dir"])
-    acct      = task.get("acct_label", "")
 
-    prefix = f"[Row {row_index}]{acct}"
+    prefix = f"[Row {row_index}]"
 
-    limits = _account_limits(task.get("account_slot_key", "default"))
-
-    with limits["row"]:
+    try:
+        # Checkpoint truoc khi bat dau
         if cancel_event and cancel_event.is_set():
-            log(f"{prefix} Dung trong hang doi row")
+            log(f"{prefix} Dung trong hang doi")
             return row_index, None
-        return _process_row_in_slot(task, config, credentials, log, cancel_event, prefix, limits)
 
+        video_url = row[config.video_url_col] if len(row) > config.video_url_col else ""
+        file_id   = extract_drive_file_id(video_url)
+        product   = row[1][:50] if len(row) > 1 else f"row_{row_index}"
+        drive_svc = build_service(credentials, "drive", "v3")
 
-def _process_row_in_slot(
-    task: dict,
-    config: PipelineConfig,
-    credentials,
-    log: LogFn,
-    cancel_event: "threading.Event | None",
-    prefix: str,
-    limits: dict[str, threading.Semaphore],
-) -> tuple[int, list[str] | None]:
-    row_index = task["row_index"]
-    row       = task["row"]
-    folder_id = task["folder_id"]
-    tmp_dir   = Path(task["tmp_dir"])
-
-    video_url = row[config.video_url_col] if len(row) > config.video_url_col else ""
-    file_id   = extract_drive_file_id(video_url)
-    product   = row[1][:50] if len(row) > 1 else f"row_{row_index}"
-    drive_svc = build_service(credentials, "drive", "v3")
-
-    # Checkpoint 1: truoc download
-    if cancel_event and cancel_event.is_set():
-        log(f"{prefix} Dung truoc download")
-        return row_index, None
-
-    # Download
-    video_path = tmp_dir / f"{file_id}_{row_index}.mp4"
-    try:
-        log(f"{prefix} Downloading... ({product})")
-        with limits["download"]:
-            if cancel_event and cancel_event.is_set():
-                log(f"{prefix} Dung trong hang doi download")
-                return row_index, None
-            download_video(drive_svc, file_id or "", video_path, cancel_event)
-    except Exception as e:
+        # Checkpoint 1: truoc download
         if cancel_event and cancel_event.is_set():
-            log(f"{prefix} Dung trong download")
-        else:
-            log(f"{prefix} Download loi: {e}")
-        return row_index, None
+            log(f"{prefix} Dung truoc download")
+            return row_index, None
 
-    # Checkpoint 2
-    if cancel_event and cancel_event.is_set():
-        video_path.unlink(missing_ok=True)
-        log(f"{prefix} Dung sau download")
-        return row_index, None
-
-    # Extract
-    thumb_paths: list[Path] = []
-    try:
-        base = re.sub(r"[^\w]", "_", f"r{row_index}_{product[:20]}")
-        with limits["ffmpeg"]:
+        # Download
+        video_path = tmp_dir / f"{file_id}_{row_index}.mp4"
+        try:
+            log(f"{prefix} Downloading... ({product})")
+            download_video(drive_svc, file_id or "", video_path, cancel_event)
+        except Exception as e:
             if cancel_event and cancel_event.is_set():
-                video_path.unlink(missing_ok=True)
-                log(f"{prefix} Dung trong hang doi ffmpeg")
-                return row_index, None
-            thumb_paths = extract_thumbnails(config, video_path, tmp_dir, base)
-        log(f"{prefix} {len(thumb_paths)} thumbnails extracted")
-    except Exception as e:
-        log(f"{prefix} ffmpeg loi: {e}")
-        video_path.unlink(missing_ok=True)
-        return row_index, None
+                log(f"{prefix} Dung trong download")
+            else:
+                log(f"{prefix} Download loi: {e}")
+            return row_index, None
 
-    # Checkpoint 3
-    if cancel_event and cancel_event.is_set():
+        # Checkpoint 2
+        if cancel_event and cancel_event.is_set():
+            video_path.unlink(missing_ok=True)
+            log(f"{prefix} Dung sau download")
+            return row_index, None
+
+        # Extract thumbnails
+        thumb_paths: list[Path] = []
+        try:
+            base = re.sub(r"[^\w]", "_", f"r{row_index}_{product[:20]}")
+            thumb_paths = extract_thumbnails(config, video_path, tmp_dir, base)
+            log(f"{prefix} {len(thumb_paths)} thumbnails extracted")
+        except Exception as e:
+            log(f"{prefix} ffmpeg loi: {e}")
+            video_path.unlink(missing_ok=True)
+            return row_index, None
+
+        # Checkpoint 3
+        if cancel_event and cancel_event.is_set():
+            video_path.unlink(missing_ok=True)
+            for tp in thumb_paths:
+                tp.unlink(missing_ok=True)
+            log(f"{prefix} Dung sau extract (khong upload)")
+            return row_index, None
+
+        def upload_one(path: Path) -> str:
+            # Google API (httplib2) is NOT thread-safe. Build a new service for each thread.
+            svc = build_service(credentials, "drive", "v3")
+            return upload_thumb(svc, path, folder_id)
+
+        links: list[str] = []
+        with ThreadPoolExecutor(max_workers=config.upload_workers) as pool:
+            futures = [pool.submit(upload_one, tp) for tp in thumb_paths]
+            for future in futures:
+                try:
+                    if cancel_event and cancel_event.is_set():
+                        raise RuntimeError("Upload cancelled")
+                    links.append(future.result())
+                except Exception as e:
+                    log(f"{prefix} Upload loi: {e}")
+
+        # Cleanup
         video_path.unlink(missing_ok=True)
         for tp in thumb_paths:
             tp.unlink(missing_ok=True)
-        log(f"{prefix} Dung sau extract (khong upload)")
+
+        if cancel_event and cancel_event.is_set():
+            log(f"{prefix} Dung sau upload (khong ghi sheet)")
+            return row_index, None
+
+        if links:
+            log(f"{prefix} Uploaded {len(links)} thumbs")
+        return row_index, links or None
+    except Exception as e:
+        log(f"{prefix} Lỗi không mong muốn trong quá trình xử lý: {e}")
         return row_index, None
-
-    # Upload song song
-    def upload_one(path: Path) -> str:
-        svc = build_service(credentials, "drive", "v3")
-        with limits["upload"]:
-            if cancel_event and cancel_event.is_set():
-                raise RuntimeError("Upload cancelled")
-            return upload_thumb(svc, path, folder_id)
-
-    links: list[str] = []
-    with ThreadPoolExecutor(max_workers=config.upload_workers) as pool:
-        futures = {pool.submit(upload_one, tp): tp for tp in thumb_paths}
-        for future in as_completed(futures):
-            try:
-                links.append(future.result())
-            except Exception as e:
-                log(f"{prefix} Upload loi: {e}")
-
-    # Cleanup
-    video_path.unlink(missing_ok=True)
-    for tp in thumb_paths:
-        tp.unlink(missing_ok=True)
-
-    if cancel_event and cancel_event.is_set():
-        log(f"{prefix} Dung sau upload (khong ghi sheet)")
-        return row_index, None
-
-    if links:
-        log(f"{prefix} Uploaded {len(links)} thumbs")
-    return row_index, links or None
 
 
 # --- Main pipeline -----------------------------------------------------------
@@ -172,18 +129,16 @@ def run_pipeline(
     log: LogFn | None = None,
     cancel_event: threading.Event | None = None,
 ) -> PipelineResult:
+    """Chay pipeline voi 1 tai khoan (profile_id dau tien trong config)."""
     log = log or (lambda m: None)
     t0  = time.time()
 
-    # Load credentials (1 hoac nhieu profile)
-    creds_list = load_credentials_list(config, log)
-    n_accounts  = len(creds_list)
-    log(f"[*] Su dung {n_accounts} tai khoan Google")
+    # Load credentials — chi dung 1 tai khoan
+    from backend.pipeline.credentials import load_single_credentials
+    creds = load_single_credentials(config, log)
 
-    # Dung credentials dau tien de doc sheet & tao folder
-    primary_creds = creds_list[0]
-    sheets_svc    = build_service(primary_creds, "sheets", "v4")
-    drive_svc     = build_service(primary_creds, "drive",  "v3")
+    sheets_svc = build_service(creds, "sheets", "v4")
+    drive_svc  = build_service(creds, "drive",  "v3")
 
     log("[*] Doc sheet...")
     folder_id = get_or_create_folder(drive_svc, config.drive_folder, log)
@@ -204,14 +159,7 @@ def run_pipeline(
         else:
             tasks.append({"row_index": i, "row": row, "folder_id": folder_id})
 
-    # Phan phoi credentials theo round-robin cho tung task
-    for idx, task in enumerate(tasks):
-        acct_idx = idx % n_accounts
-        task["credentials"] = creds_list[acct_idx]
-        task["account_slot_key"] = config.profile_ids[acct_idx] if config.profile_ids else "default"
-        task["acct_label"]  = f" [Acc{acct_idx + 1}]" if n_accounts > 1 else ""
-
-    log(f"\n[*] Xu ly {len(tasks)} videos / {n_accounts} tai khoan / {config.max_workers} luong...\n")
+    log(f"\n[*] Xu ly {len(tasks)} videos / {config.max_workers} luong...\n")
     results: dict[int, list[str] | None] = {}
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
@@ -226,10 +174,7 @@ def run_pipeline(
                     results[task["row_index"]] = None
                     continue
                 futures.append(
-                    pool.submit(
-                        _process_row,
-                        task, config, task["credentials"], log, cancel_event,
-                    )
+                    pool.submit(_process_row, task, config, creds, log, cancel_event)
                 )
 
             for future in as_completed(futures):

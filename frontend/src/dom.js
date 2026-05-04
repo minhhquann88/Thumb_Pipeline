@@ -22,9 +22,13 @@ export const fFolder         = document.querySelector("#f-folder");
 export const fVcol           = document.querySelector("#f-vcol");
 export const fTcol           = document.querySelector("#f-tcol");
 export const fTs             = document.querySelector("#f-ts");
-export const sheetStatus     = document.querySelector("#sheet-status");
-export const dupWarning      = document.querySelector("#dup-warning");
-export const openSheetBtn    = document.querySelector("#open-sheet-btn");
+export const sheetStatus     = document.querySelector("#sheet-status");   // legacy, giữ để không vỡ code cũ
+export const sidStatus       = document.querySelector("#sid-status");     // inline dưới Spreadsheet ID
+export const sidLinkWrap     = document.querySelector("#sid-link-wrap");
+export const sidLinkInput    = document.querySelector("#sid-link-input");
+export const snameStatus     = document.querySelector("#sname-status");
+export const checkSidBtn     = document.querySelector("#check-sid-btn");
+export const checkSnameBtn   = document.querySelector("#check-sname-btn");
 
 // ─── Run / Stop / Log ─────────────────────────────────────────────────────
 export const runBtn          = document.querySelector("#run-btn");
@@ -33,5 +37,4 @@ export const logTitle        = document.querySelector("#log-title");
 export const statusPill      = document.querySelector("#status-pill");
 export const outputWrap      = document.querySelector("#output-wrap");
 export const output          = document.querySelector("#output");
-export const clearBtn        = document.querySelector("#clear-btn");
 export const scrollBottomBtn = document.querySelector("#scroll-bottom-btn");

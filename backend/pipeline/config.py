@@ -19,9 +19,8 @@ class PipelineConfig:
     thumb_width: int = 1280
     max_workers: int = 3
     upload_workers: int = 3
-    # Danh sach profile_id dung cho workflow da tai khoan
-    # Neu rong -> dung tai khoan mac dinh (auth/token.json)
-    profile_ids: list[str] = field(default_factory=list)
+    # Profile ID cua tai khoan Google se dung (rong = dung tai khoan mac dinh)
+    profile_id: str = ""
 
 
 @dataclass(frozen=True)

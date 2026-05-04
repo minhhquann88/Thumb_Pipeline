@@ -17,6 +17,7 @@ class AuthStatus(BaseModel):
 
 class LoginResult(BaseModel):
     status: str  # "started" | "already_running"
+    auth_url: str | None = None
     message: str
 
 
@@ -36,7 +37,7 @@ class JobRequest(BaseModel):
     thumb_width: int = Field(default=1280, ge=64)
     max_workers: int = Field(default=3, ge=1, le=16)
     upload_workers: int = Field(default=3, ge=1, le=16)
-    profile_ids: list[str] = Field(default_factory=list)
+    profile_id: str = Field(default="", description="Profile ID cua tai khoan Google se dung")
 
 
 class JobSnapshot(BaseModel):
@@ -56,7 +57,7 @@ class JobSnapshot(BaseModel):
 class WorkflowTarget(BaseModel):
     spreadsheet_id: str = Field(min_length=1)
     sheet_name: str = Field(default="Sheet1", min_length=1)
-    profile_ids: list[str] = Field(default_factory=list)
+    profile_id: str = Field(default="")
 
 
 class WorkflowRequest(BaseModel):
@@ -69,7 +70,7 @@ class WorkflowRequest(BaseModel):
     thumb_width: int = Field(default=1280, ge=64)
     max_workers: int = Field(default=3, ge=1, le=16)
     upload_workers: int = Field(default=3, ge=1, le=16)
-    profile_ids: list[str] = Field(default_factory=list)
+    profile_id: str = Field(default="", description="Profile ID dung cho tat ca targets")
 
 
 class WorkflowStartResult(BaseModel):
@@ -82,6 +83,7 @@ class WorkflowStartResult(BaseModel):
 class ProfileInfo(BaseModel):
     id: str
     name: str
+    google_name: str | None = None
     email: str | None = None
     logged_in: bool = False
 

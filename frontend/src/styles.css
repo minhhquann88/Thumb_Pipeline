@@ -168,7 +168,7 @@ body { background: var(--bg); }
 }
 
 .add-acct-btn {
-  margin-top: auto;
+  margin-top: 6px;
   width: 100%;
   justify-content: center;
 }
@@ -289,16 +289,6 @@ body { background: var(--bg); }
   text-overflow: ellipsis;
 }
 
-/* ── Dup warning ──────────────────────────────────────────────────────── */
-.dup-warning {
-  font-size: 12px;
-  color: #92400e;
-  background: #fef3c7;
-  border: 1px solid #fcd34d;
-  border-radius: 5px;
-  padding: 6px 10px;
-}
-
 /* ── Status pill ──────────────────────────────────────────────────────── */
 .status-pill {
   font-size: 11px;
@@ -352,6 +342,33 @@ form {
   background: #fee2e2;
   border-color: #fca5a5;
   color: var(--danger);
+}
+
+/* Inline field status (duoi Spreadsheet ID va Sheet name) */
+.field-status {
+  font-size: 12px;
+  border-radius: 5px;
+  padding: 5px 10px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: var(--accent);
+  margin-top: 2px;
+}
+.field-status.ok {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: var(--green);
+}
+.field-status.error {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: var(--danger);
+}
+.field-status.checking {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  color: #0369a1;
+  font-style: italic;
 }
 
 /* Two fields side by side */

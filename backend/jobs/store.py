@@ -49,3 +49,4 @@ def unregister_sheet(spreadsheet_id: str, sheet_name: str, job_id: str) -> None:
     with _jobs_lock:
         if _running_sheets.get(key) == job_id:
             del _running_sheets[key]
+

@@ -36,6 +36,14 @@ env/
 htmlcov/
 dist/
 build/
+*.spec
+!backend_server.spec
+
+# External Tools / Binaries
+tools/*.exe
+tools/*.zip
+tools/*.tar.gz
+tools/*.7z
 
 # Rust and Tauri build output
 target/
@@ -46,3 +54,4 @@ src-tauri/target/
 Thumbs.db
 .vscode/
 .idea/
+.gemini/

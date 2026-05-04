@@ -71,20 +71,55 @@ fn bundled_backend_command(exe_dir: &Path) -> Option<BackendCommand> {
 
 fn dist_backend_command(exe_dir: &Path) -> Option<BackendCommand> {
     exe_dir.ancestors().find_map(|p| {
-        let candidate = p
-            .join("dist")
-            .join("backend_server")
-            .join("backend_server.exe");
-        if candidate.exists() {
+        let candidate_flat = p.join("dist").join("backend_server.exe");
+        if candidate_flat.exists() {
             Some(BackendCommand {
-                program: candidate,
+                program: candidate_flat,
                 args: Vec::new(),
                 current_dir: None,
             })
         } else {
-            None
+            let candidate_nested = p
+                .join("dist")
+                .join("backend_server")
+                .join("backend_server.exe");
+            if candidate_nested.exists() {
+                Some(BackendCommand {
+                    program: candidate_nested,
+                    args: Vec::new(),
+                    current_dir: None,
+                })
+            } else {
+                None
+            }
         }
     })
+}
+
+fn release_dir_backend_command(exe_dir: &Path) -> Option<BackendCommand> {
+    let candidate = exe_dir.join("backend_server.exe");
+    if candidate.exists() {
+        Some(BackendCommand {
+            program: candidate,
+            args: Vec::new(),
+            current_dir: None,
+        })
+    } else {
+        None
+    }
+}
+
+fn resources_backend_command(exe_dir: &Path) -> Option<BackendCommand> {
+    let candidate = exe_dir.join("resources").join("backend_server.exe");
+    if candidate.exists() {
+        Some(BackendCommand {
+            program: candidate,
+            args: Vec::new(),
+            current_dir: None,
+        })
+    } else {
+        None
+    }
 }
 
 fn resolve_backend_command(current_exe: &Path, debug_mode: bool) -> Result<BackendCommand, String> {
@@ -102,12 +137,20 @@ fn resolve_backend_command(current_exe: &Path, debug_mode: bool) -> Result<Backe
         return Ok(command);
     }
 
+    if let Some(command) = release_dir_backend_command(exe_dir) {
+        return Ok(command);
+    }
+
+    if let Some(command) = resources_backend_command(exe_dir) {
+        return Ok(command);
+    }
+
     if let Some(command) = dist_backend_command(exe_dir) {
         return Ok(command);
     }
 
     Err(format!(
-        "Khong tim thay backend. Dev mode can backend/main.py; release can _internal/backend_server.exe hoac dist/backend_server/backend_server.exe."
+        "Khong tim thay backend. Dev mode can backend/main.py; release can _internal/backend_server.exe, backend_server.exe, resources/backend_server.exe, dist/backend_server.exe hoac dist/backend_server/backend_server.exe."
     ))
 }
 
@@ -150,10 +193,28 @@ fn spawn_backend(backend_command: BackendCommand) -> Result<Child, String> {
     })
 }
 
+#[tauri::command]
+fn restart_backend(state: State<BackendProcess>) -> Result<String, String> {
+    // Kill process cũ
+    let mut guard = state.0.lock().map_err(|_| "lock poisoned".to_string())?;
+    if let Some(mut child) = guard.take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    // Respawn
+    let cmd = backend_command()?;
+    let child = spawn_backend(cmd)?;
+    *guard = Some(child);
+    Ok("Backend restarted".to_string())
+}
+
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(BackendProcess(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![restart_backend])
         .setup(|app| {
             let backend_command = backend_command()?;
             let backend = spawn_backend(backend_command)?;
@@ -232,6 +293,27 @@ mod tests {
             .map(String::from)
             .to_vec()
         );
+
+        fs::remove_dir_all(root).expect("remove temp project");
+    }
+
+    #[test]
+    fn release_backend_command_uses_flat_dist_backend_exe() {
+        let root = temp_project_root();
+        fs::create_dir_all(root.join("dist")).expect("create dist dir");
+        let backend_exe = root.join("dist").join("backend_server.exe");
+        fs::write(&backend_exe, "backend").expect("write backend exe");
+        let current_exe = root
+            .join("src-tauri")
+            .join("target")
+            .join("release")
+            .join("thumb_pipeline_desktop.exe");
+
+        let command = resolve_backend_command(&current_exe, false).expect("resolve release backend");
+
+        assert_eq!(command.program, backend_exe);
+        assert_eq!(command.current_dir, None);
+        assert!(command.args.is_empty());
 
         fs::remove_dir_all(root).expect("remove temp project");
     }

@@ -11,11 +11,12 @@ import multiprocessing
 import sys
 
 import uvicorn
+from backend.main import app
 
 
 def main() -> None:
     uvicorn.run(
-        "backend.main:app",
+        app,
         host="127.0.0.1",
         port=8765,
         log_level="warning",   # tắt bớt noise

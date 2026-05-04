@@ -23,6 +23,9 @@ from backend.models import AuthStatus, LoginResult
 SCOPES = [
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/spreadsheets",
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
 ]
 
 
@@ -38,9 +41,9 @@ def _get_app_data_dir() -> Path:
 
 
 def _get_bundle_dir() -> Path:
-    """Thư mục chứa file đóng gói: MEIPASS khi PyInstaller, project root khi dev."""
-    if hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    """Thư mục chứa file đóng gói: cùng thư mục exe khi PyInstaller, project root khi dev."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
     return Path(__file__).parent.parent
 
 

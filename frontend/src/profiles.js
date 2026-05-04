@@ -30,7 +30,7 @@ export async function addAccount() {
     });
     state.tabStates[profile.id] = { ...state.DEFAULT_SETTINGS };
     await loadProfiles();
-    if (shouldSelectNewProfile) switchTab(profile.id);
+    switchTab(profile.id);
   } catch (e) { alert("Lỗi: " + e.message); }
 }
 

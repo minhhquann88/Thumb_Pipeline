@@ -46,9 +46,10 @@ def launch_job(
     spreadsheet_id: str,
     sheet_name: str,
     config: PipelineConfig,
+    profile_id: str = "",
 ) -> JobState:
-    """Tạo JobState, đăng ký và khởi động thread."""
-    job = JobState(uuid.uuid4().hex, spreadsheet_id=spreadsheet_id, sheet_name=sheet_name)
+    """Tao JobState, dang ky va khoi dong thread."""
+    job = JobState(uuid.uuid4().hex, spreadsheet_id=spreadsheet_id, sheet_name=sheet_name, profile_id=profile_id)
     register_job(job)
     threading.Thread(
         target=_run_job,

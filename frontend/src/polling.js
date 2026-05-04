@@ -12,8 +12,7 @@ let _updateRunBtn = null;
 export function setPollingUpdateRunBtn(fn) { _updateRunBtn = fn; }
 
 export function startPolling() {
-  if (state.pollTimer) clearInterval(state.pollTimer);
-  state.setPollTimer(setInterval(pollAll, 2000));
+  if (state.pollTimer) clearTimeout(state.pollTimer);
   pollAll();
 }
 
@@ -44,13 +43,9 @@ async function pollAll() {
     if (_updateRunBtn) _updateRunBtn();
     const anyRunning = allJobs.some(j => ["queued","running","cancelling"].includes(j.status));
     const targetInterval = anyRunning ? 2000 : 5000;
-    if (state.pollTimer && state.pollTimer._interval !== targetInterval) {
-      clearInterval(state.pollTimer);
-      const t = setInterval(pollAll, targetInterval);
-      t._interval = targetInterval;
-      state.setPollTimer(t);
-    }
+    state.setPollTimer(setTimeout(pollAll, targetInterval));
   } catch (err) {
     console.error("[pollAll]", err);
+    state.setPollTimer(setTimeout(pollAll, 5000));
   }
 }

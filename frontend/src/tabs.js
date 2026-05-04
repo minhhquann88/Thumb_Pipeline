@@ -1,6 +1,6 @@
 // frontend/src/tabs.js — Tab management, form↔state sync, layout
 
-import { acctTabbar, emptyState, workspace, fSid, fSname, fFolder, fVcol, fTcol, fTs, dupWarning, output } from "./dom.js";
+import { acctTabbar, emptyState, workspace, fSid, fSname, fFolder, fVcol, fTcol, fTs, output } from "./dom.js";
 import * as state from "./state.js";
 import { esc } from "./utils.js";
 import { renderJobStatus } from "./log.js";
@@ -72,7 +72,6 @@ export function loadStateToForm(pid) {
   fVcol.value    = st.videoUrlCol;
   fTcol.value    = st.thumbCol;
   fTs.value      = st.timestamps;
-  dupWarning.style.display = "none";
   output.textContent = st.jobId ? "Đang tải log..." : "Chưa có dữ liệu.";
   fSid.dispatchEvent(new Event("input"));
 }
